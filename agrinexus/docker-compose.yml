@@ -1,0 +1,41 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:7
+    container_name: agrinexus-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agrinexus-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 8080
+      MONGODB_URI: mongodb://mongo:27017/agrinexus
+      CLIENT_URL: http://localhost:5173
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongo
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: agrinexus-client
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+volumes:
+  mongo_data:

@@ -1,0 +1,20 @@
+import { z } from "zod";
+import { predictDiseaseRisk } from "../services/diseasePredictionService.js";
+import { sendSuccess } from "../utils/ApiResponse.js";
+
+const schema = z.object({
+  cropType: z.string().default("Tomato"),
+  cropStage: z.string().default("fruiting"),
+  temperature: z.number().optional(),
+  humidity: z.number().min(0).max(100).optional(),
+  leafWetnessPct: z.number().min(0).max(100).optional(),
+  symptomSignal: z.number().min(0).max(1).optional(),
+  fieldContext: z.any().optional(),
+  regionalDiseaseDataset: z.string().optional()
+});
+
+export async function diseasePrediction(req, res) {
+  const payload = schema.parse(req.body);
+  const prediction = await predictDiseaseRisk(req.user.id, payload);
+  return sendSuccess(res, { prediction }, "Disease forecast generated.");
+}
