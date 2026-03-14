@@ -4,7 +4,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis, ReferenceArea } from "recharts";
-import { BarChart3, CalendarDays, Camera, LineChart, Printer, SlidersHorizontal, Sparkles, UploadCloud, X } from "lucide-react";
+import { BarChart3, CalendarDays, Camera, Gauge, Layers, LineChart, Printer, ShieldAlert, SlidersHorizontal, Sparkles, TrendingUp, UploadCloud, X } from "lucide-react";
 
 import { AgriVisionHeader } from "@/components/agrivision/header";
 import { BottomDock, type DockView } from "@/components/agrivision/bottom-dock";
@@ -20,6 +20,10 @@ import { HarvestForecastTab } from "@/components/agrivision/harvest-forecast-tab
 import { YieldForecastTab } from "@/components/agrivision/yield-forecast-tab";
 import { MarketTab } from "@/components/agrivision/market-tab";
 import { ChatTab } from "@/components/agrivision/chat-tab";
+import { SpectralTab } from "@/components/agrivision/spectral-tab";
+import { SensorTab } from "@/components/agrivision/sensor-tab";
+import { RiskTab } from "@/components/agrivision/risk-tab";
+import { TrendsTab } from "@/components/agrivision/trends-tab";
 
 import type {
   AppControls,
@@ -289,6 +293,10 @@ export function Dashboard() {
       { id: "go-plan", label: "Go to Plan", description: "Harvest plan + AI yield curve", icon: CalendarDays, onSelect: () => setView("plan") },
       { id: "go-market", label: "Go to Market", description: "Forecast prices and profit", icon: LineChart, onSelect: () => setView("market") },
       { id: "go-advisor", label: "Go to Advisor", description: "Ask questions with context", icon: Sparkles, onSelect: () => setView("advisor") },
+      { id: "go-spectral", label: "Go to Spectral", description: "NDVI/NDRE/EVI field health map", icon: Layers, onSelect: () => setView("spectral") },
+      { id: "go-sensor", label: "Go to Sensors", description: "Soil moisture, temp, humidity", icon: Gauge, onSelect: () => setView("sensor") },
+      { id: "go-risk", label: "Go to Risk", description: "Pest & disease risk assessment", icon: ShieldAlert, onSelect: () => setView("risk") },
+      { id: "go-trends", label: "Go to Trends", description: "LSTM/CNN NDVI trend analysis", icon: TrendingUp, onSelect: () => setView("trends") },
       {
         id: "open-inputs",
         label: "Open Inputs",
@@ -328,6 +336,42 @@ export function Dashboard() {
       },
     ],
     [handleAnalyze, handleYieldForecast, image.url, isAnalysisLoading, isYieldForecastLoading, plantAnalysisResult]
+  );
+
+  const renderSpectral = () => (
+    <div className="space-y-6 animate-in fade-in-0 duration-300">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-headline text-lg font-semibold">Spectral Health Map</div>
+          <div className="text-xs text-muted-foreground">Multispectral vegetation & soil indices from hyperspectral imaging.</div>
+        </div>
+      </div>
+      <SpectralTab />
+    </div>
+  );
+
+  const renderSensor = () => (
+    <div className="space-y-6 animate-in fade-in-0 duration-300">
+      <SensorTab />
+    </div>
+  );
+
+  const renderRisk = () => (
+    <div className="space-y-6 animate-in fade-in-0 duration-300">
+      <RiskTab />
+    </div>
+  );
+
+  const renderTrends = () => (
+    <div className="space-y-6 animate-in fade-in-0 duration-300">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-headline text-lg font-semibold">AI Trend Analysis</div>
+          <div className="text-xs text-muted-foreground">LSTM & CNN models for temporal NDVI trend detection and anomaly flagging.</div>
+        </div>
+      </div>
+      <TrendsTab />
+    </div>
   );
 
   const renderHome = () => (
@@ -686,6 +730,10 @@ export function Dashboard() {
         {view === "plan" ? renderPlan() : null}
         {view === "market" ? renderMarket() : null}
         {view === "advisor" ? renderAdvisor() : null}
+        {view === "spectral" ? renderSpectral() : null}
+        {view === "sensor" ? renderSensor() : null}
+        {view === "risk" ? renderRisk() : null}
+        {view === "trends" ? renderTrends() : null}
 
         <ReportPage
           imageUrl={image.url}

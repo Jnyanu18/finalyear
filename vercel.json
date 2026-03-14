@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "npm --prefix client install",
+  "installCommand": "npm ci --prefix client",
   "buildCommand": "npm --prefix client run build",
   "outputDirectory": "client/dist",
   "rewrites": [

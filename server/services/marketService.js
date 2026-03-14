@@ -1,48 +1,39 @@
 import { MarketPrediction } from "../models/MarketPrediction.js";
 import { FarmIntelligence } from "../models/FarmIntelligence.js";
-import { cropPriceFactor, distanceTransportCost, mandiCatalog } from "../utils/marketData.js";
+import { distanceTransportCost, mandiCatalog } from "../utils/marketData.js";
 import {
   buildInsufficientDataResponse,
   freshnessConfidence,
   toNumber
 } from "../utils/modelGovernance.js";
+import { fetchMarketSnapshot } from "../utils/externalData.js";
+import { safeCreate, safeFindOneLean } from "../utils/persistence.js";
 
-export async function bestMarketRoute(userId, input) {
-  const modelVersion = "market_model_v2";
-  const cropType = input.crop || input.cropType || "Tomato";
-  const quantity = toNumber(input.quantity, 0);
-  const factor = cropPriceFactor(cropType);
-  const localDistanceAdjust = toNumber(input.localDistanceAdjust, 0);
-  const marketRatesCapturedAt = input.marketRatesCapturedAt || null;
-  const farmerLocation = input.farmerLocation || null;
-  const freshness = freshnessConfidence(marketRatesCapturedAt, 12);
+function roundMetric(value) {
+  return Number(value.toFixed(2));
+}
 
-  const missingInputs = [];
-  if (!cropType) missingInputs.push("crop");
-  if (!quantity) missingInputs.push("quantity");
-  if (!marketRatesCapturedAt) missingInputs.push("marketRatesCapturedAt");
-  const staleInputs = freshness === 0 ? ["marketRatesCapturedAt"] : [];
+function averageBasePrice() {
+  return mandiCatalog.reduce((sum, market) => sum + market.basePrice, 0) / mandiCatalog.length;
+}
 
-  if (missingInputs.length || staleInputs.length) {
-    return buildInsufficientDataResponse({
-      moduleName: "market",
-      modelVersion,
-      missingInputs,
-      staleInputs,
-      assumptions: { maxFreshHours: 12 }
-    });
-  }
-
-  const intelligence = await FarmIntelligence.findOne({ userId }).lean();
-  const priceBias = toNumber(intelligence?.averagePriceError, 0);
+export function evaluateMarketOptions({
+  quantity,
+  referencePricePerKg,
+  localDistanceAdjust = 0,
+  priceBias = 0
+}) {
+  const anchorPrice = Math.max(1, toNumber(referencePricePerKg, averageBasePrice()));
+  const avgBasePrice = averageBasePrice();
 
   const options = mandiCatalog.map((market) => {
-    const expectedPriceRaw = market.basePrice * factor;
-    const expectedPrice = Number(Math.max(1, expectedPriceRaw + priceBias * 0.4).toFixed(2));
+    const marketMultiplier = market.basePrice / avgBasePrice;
+    const expectedPrice = roundMetric(Math.max(1, anchorPrice * marketMultiplier + priceBias * 0.4));
     const distanceKm = Math.max(1, Math.round(market.distanceKm + localDistanceAdjust));
     const transportCost = distanceTransportCost(distanceKm, quantity);
     const gross = expectedPrice * quantity;
-    const netProfit = Number((gross - transportCost).toFixed(2));
+    const netProfit = roundMetric(gross - transportCost);
+
     return {
       market: market.market,
       expectedPrice,
@@ -53,11 +44,47 @@ export async function bestMarketRoute(userId, input) {
   });
 
   options.sort((a, b) => b.netProfit - a.netProfit);
+  return options;
+}
+
+export async function buildMarketRouteRecommendation(userId, input, { persist = true } = {}) {
+  const modelVersion = "market_model_v3";
+  const cropType = input.crop || input.cropType || "Tomato";
+  const quantity = toNumber(input.quantity, 0);
+  const farmerLocation = input.farmerLocation || "Bengaluru";
+  const localDistanceAdjust = toNumber(input.localDistanceAdjust, 0);
+
+  if (!cropType || !quantity) {
+    return buildInsufficientDataResponse({
+      moduleName: "market",
+      modelVersion,
+      missingInputs: [
+        ...(!cropType ? ["crop"] : []),
+        ...(!quantity ? ["quantity"] : [])
+      ],
+      staleInputs: [],
+      assumptions: { maxFreshHours: 12 }
+    });
+  }
+
+  const intelligence = await safeFindOneLean(FarmIntelligence, { userId });
+  const priceBias = toNumber(intelligence?.averagePriceError, 0);
+  const marketSnapshot = input.marketSnapshot || await fetchMarketSnapshot(cropType, farmerLocation);
+  const marketRatesCapturedAt = input.marketRatesCapturedAt || marketSnapshot.capturedAt || null;
+  const referencePricePerKg = toNumber(input.referencePricePerKg, marketSnapshot.pricePerKg);
+  const freshness = marketRatesCapturedAt ? freshnessConfidence(marketRatesCapturedAt, 12) : 0.72;
+  const staleInputs = freshness === 0 ? ["marketRatesCapturedAt"] : [];
+  const options = evaluateMarketOptions({
+    quantity,
+    referencePricePerKg,
+    localDistanceAdjust,
+    priceBias
+  });
   const best = options[0];
-  const spread = 0.08;
+  const spread = 0.08 + (1 - Math.max(freshness, 0.35)) * 0.08;
   const expected = best.netProfit;
-  const pessimistic = Number((expected * (1 - spread)).toFixed(2));
-  const optimistic = Number((expected * (1 + spread)).toFixed(2));
+  const pessimistic = roundMetric(expected * (1 - spread));
+  const optimistic = roundMetric(expected * (1 + spread));
   const scenarios = {
     pessimistic,
     expected,
@@ -68,27 +95,34 @@ export async function bestMarketRoute(userId, input) {
       P90: optimistic
     }
   };
-  const locationPenalty = farmerLocation ? 0 : 0.08;
-  const confidence = Number(Math.max(0.45, (0.58 + 0.26 * freshness - locationPenalty + toNumber(intelligence?.predictionConfidence, 0.7) * 0.12)).toFixed(2));
+  const locationPenalty = input.farmerLocation ? 0 : 0.06;
+  const sourcePenalty = marketSnapshot.source === "fallback" ? 0.04 : 0;
+  const confidence = roundMetric(
+    Math.max(
+      0.45,
+      0.6 + 0.22 * Math.max(freshness, 0.35) - locationPenalty - sourcePenalty + toNumber(intelligence?.predictionConfidence, 0.7) * 0.1
+    )
+  );
+  const status = staleInputs.length ? "assumed_data" : "ok";
 
-  const doc = await MarketPrediction.create({
-    userId,
+  const payload = {
     cropType,
     quantity,
     bestMarket: best.market,
     expectedPrice: best.expectedPrice,
     transportCost: best.transportCost,
     netProfit: best.netProfit,
-    status: "ok",
+    status,
     modelVersion,
     confidence,
-    missingInputs: [],
+    missingInputs: marketRatesCapturedAt ? [] : ["marketRatesCapturedAt"],
     scenarios,
     provenance: {
       input_sources: {
-        marketRatesCapturedAt: "market_feed",
-        farmerLocation: "module_input",
-        quantity: "module_input"
+        marketRatesCapturedAt: marketSnapshot.source,
+        farmerLocation: input.farmerLocation ? "module_input" : "default_location",
+        quantity: "module_input",
+        referencePricePerKg: input.referencePricePerKg ? "module_input" : "market_snapshot"
       },
       assumptions: {
         freshnessMaxHours: 12,
@@ -96,7 +130,7 @@ export async function bestMarketRoute(userId, input) {
         priceBiasFromOutcome: priceBias
       },
       formula_terms: {
-        expectedPrice: "(basePrice * cropPriceFactor) + 0.4 * averagePriceError",
+        expectedPrice: "referencePricePerKg * mandiBasePrice/averageMandiBasePrice + 0.4*averagePriceError",
         transportCost: "distanceTransportCost(distanceKm, quantity)",
         netProfit: "expectedPrice * quantity - transportCost"
       },
@@ -104,7 +138,24 @@ export async function bestMarketRoute(userId, input) {
     },
     options,
     inputContext: input
-  });
+  };
 
-  return doc.toObject();
+  if (!persist) {
+    return {
+      ...payload,
+      marketSignal: marketSnapshot,
+      referencePricePerKg
+    };
+  }
+
+  const doc = await safeCreate(MarketPrediction, userId, payload);
+  return {
+    ...doc,
+    marketSignal: marketSnapshot,
+    referencePricePerKg
+  };
+}
+
+export async function bestMarketRoute(userId, input) {
+  return buildMarketRouteRecommendation(userId, input, { persist: true });
 }

@@ -1,3 +1,5 @@
+import { getCropProfile } from "../config/cropProfiles.js";
+
 export const mandiCatalog = [
   { market: "Mysuru", distanceKm: 45, basePrice: 24.5 },
   { market: "Bengaluru", distanceKm: 150, basePrice: 27.2 },
@@ -7,11 +9,8 @@ export const mandiCatalog = [
 ];
 
 export function cropPriceFactor(cropType = "Tomato") {
-  const key = cropType.toLowerCase();
-  if (key.includes("tomato")) return 1;
-  if (key.includes("onion")) return 0.8;
-  if (key.includes("chilli")) return 1.35;
-  return 0.95;
+  const profile = getCropProfile(cropType);
+  return Number(profile.marketPriceFactor || 1);
 }
 
 export function distanceTransportCost(distanceKm, quantityKg) {

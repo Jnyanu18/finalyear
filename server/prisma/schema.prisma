@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AGRONOMIST
+  OPERATOR
+  VIEWER
+}
+
+enum AlertSeverity {
+  info
+  watch
+  warning
+  critical
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  role         UserRole       @default(OPERATOR)
+  orgId        String         @map("org_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  reports      Report[]       @relation("GeneratedByUser")
+  analysisRuns AnalysisRun[]  @relation("TriggeredByUser")
+
+  @@map("users")
+}
+
+model Organization {
+  id               String   @id @default(uuid())
+  name             String
+  subscriptionTier String   @map("subscription_tier")
+  createdAt        DateTime @default(now()) @map("created_at")
+  fields           Field[]
+  users            User[]
+
+  @@map("organizations")
+}
+
+model Field {
+  id              String        @id @default(uuid())
+  orgId           String        @map("org_id")
+  name            String
+  locationGeojson Json          @map("location_geojson")
+  areaHa          Float         @map("area_ha")
+  cropType        String        @map("crop_type")
+  plantedAt       DateTime      @map("planted_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  organization    Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  zones           Zone[]
+  analysisRuns    AnalysisRun[]
+  alerts          Alert[]
+  reports         Report[]
+
+  @@map("fields")
+}
+
+model Zone {
+  id             String   @id @default(uuid())
+  fieldId        String   @map("field_id")
+  zoneLabel      String   @map("zone_label")
+  boundaryGeojson Json    @map("boundary_geojson")
+  currentStatus  String   @map("current_status")
+  lastAnalyzedAt DateTime? @map("last_analyzed_at")
+  field          Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  alerts         Alert[]
+
+  @@map("zones")
+}
+
+model AnalysisRun {
+  id                String   @id @default(uuid())
+  fieldId           String   @map("field_id")
+  triggeredBy       String?  @map("triggered_by")
+  startedAt         DateTime @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  status            String
+  resultSummaryJson Json?    @map("result_summary_json")
+  field             Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  triggeredByUser   User?    @relation("TriggeredByUser", fields: [triggeredBy], references: [id], onDelete: SetNull)
+
+  @@map("analysis_runs")
+}
+
+model Alert {
+  id             String        @id @default(uuid())
+  fieldId        String        @map("field_id")
+  zoneId         String?       @map("zone_id")
+  severity       AlertSeverity
+  type           String
+  title          String
+  description    String
+  recommendation String
+  modelSource    String        @map("model_source")
+  confidence     Float
+  triggeredAt    DateTime      @map("triggered_at")
+  acknowledgedAt DateTime?     @map("acknowledged_at")
+  field          Field         @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  zone           Zone?         @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+
+  @@map("alerts")
+}
+
+model ModelVersion {
+  id          String   @id @default(uuid())
+  modelName   String   @map("model_name")
+  version     String
+  accuracy    Float
+  trainedAt   DateTime @map("trained_at")
+  sampleCount Int      @map("sample_count")
+  isActive    Boolean  @default(true) @map("is_active")
+
+  @@map("model_versions")
+}
+
+model Report {
+  id             String   @id @default(uuid())
+  fieldId        String   @map("field_id")
+  generatedBy    String?  @map("generated_by")
+  dateRangeStart DateTime @map("date_range_start")
+  dateRangeEnd   DateTime @map("date_range_end")
+  pdfUrl         String   @map("pdf_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+  field          Field    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  generatedByUser User?   @relation("GeneratedByUser", fields: [generatedBy], references: [id], onDelete: SetNull)
+
+  @@map("reports")
+}

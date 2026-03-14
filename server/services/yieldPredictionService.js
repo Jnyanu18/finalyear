@@ -2,6 +2,8 @@ import { YieldPrediction } from "../models/YieldPrediction.js";
 import { FarmIntelligence } from "../models/FarmIntelligence.js";
 import { freshnessConfidence, buildInsufficientDataResponse, toNumber } from "../utils/modelGovernance.js";
 import { upsertFieldSnapshot } from "./fieldContextService.js";
+import { safeCreate, safeFindOneLean } from "../utils/persistence.js";
+import { getCropProfile } from "../config/cropProfiles.js";
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -21,11 +23,15 @@ function stageCurve(stageRaw) {
 export async function predictYield(userId, input) {
   const modelVersion = "yield_model_v2";
   const cropType = input.cropType || "Tomato";
+  const profile = getCropProfile(cropType);
   const cropStage = input.cropStage || "fruiting";
-  const fruitsPerPlant = toNumber(input.fruitsPerPlant ?? input.fruitCount, 0);
+  const unitsPerPlant = toNumber(
+    input.fruitsPerPlant ?? input.produceUnitsPerPlant ?? input.earsPerPlant ?? input.bollsPerPlant ?? input.fruitCount,
+    0
+  );
   const acres = toNumber(input.acres, 0);
   const plantsPerAcre = toNumber(input.plantsPerAcre, 0);
-  const avgFruitWeightKg = toNumber(input.avgFruitWeightKg, 0.09);
+  const avgUnitWeightKg = toNumber(input.avgFruitWeightKg ?? input.avgUnitWeightKg, profile.avgUnitWeightKg);
   const weatherScore = clamp(toNumber(input.weatherScore, 0.8), 0.45, 1.25);
   const historicalYieldFactor = clamp(toNumber(input.historicalYieldFactor, 1), 0.6, 1.4);
 
@@ -38,7 +44,7 @@ export async function predictYield(userId, input) {
   const missingInputs = [];
   if (!acres) missingInputs.push("acres");
   if (!plantsPerAcre) missingInputs.push("plantsPerAcre");
-  if (!fruitsPerPlant) missingInputs.push("fruitsPerPlant|fruitCount");
+  if (!unitsPerPlant) missingInputs.push("produceUnitsPerPlant|fruitsPerPlant|fruitCount");
 
   if (missingInputs.length) {
     const insufficient = buildInsufficientDataResponse({
@@ -46,11 +52,10 @@ export async function predictYield(userId, input) {
       modelVersion,
       missingInputs,
       staleInputs: [],
-      assumptions: { formula: "baseYield = fruitsPerPlant * avgFruitWeightKg * totalPlants" }
+      assumptions: { formula: "baseYield = unitsPerPlant * avgUnitWeightKg * totalPlants" }
     });
 
-    const doc = await YieldPrediction.create({
-      userId,
+    const doc = await safeCreate(YieldPrediction, userId, {
       cropType,
       predictedYieldToday: 0,
       predictedYield3Days: 0,
@@ -60,14 +65,14 @@ export async function predictYield(userId, input) {
       modelVersion,
       missingInputs,
       inputContext: input,
-      explanation: "Insufficient data: acres, plants per acre, and fruits per plant are required."
+      explanation: "Insufficient data: acres, plants per acre, and per-plant produce units are required."
     });
-    return doc.toObject();
+    return doc;
   }
 
   const curve = stageCurve(cropStage);
   const totalPlants = acres * plantsPerAcre;
-  const baseYield = fruitsPerPlant * avgFruitWeightKg * totalPlants;
+  const baseYield = unitsPerPlant * avgUnitWeightKg * totalPlants;
 
   const rainfallFactor = clamp(1 - toNumber(input.fieldContext?.weather?.rainfallMm, 0) * 0.01, 0.82, 1.06);
   const temperatureC = toNumber(input.fieldContext?.weather?.temperatureC, 27);
@@ -76,7 +81,7 @@ export async function predictYield(userId, input) {
 
   const grossPotentialYieldKg = baseYield * weatherAdjustment * historicalYieldFactor;
 
-  const intelligence = await FarmIntelligence.findOne({ userId }).lean();
+  const intelligence = await safeFindOneLean(FarmIntelligence, { userId });
   const yieldErrorBiasPct = clamp(toNumber(intelligence?.averageYieldError, 0) / Math.max(grossPotentialYieldKg, 1), -0.2, 0.2);
   const correctedYieldKg = grossPotentialYieldKg * (1 - yieldErrorBiasPct);
   const sellableYieldKg = correctedYieldKg * (1 - totalLossPct / 100);
@@ -101,8 +106,7 @@ export async function predictYield(userId, input) {
     }
   };
 
-  const prediction = await YieldPrediction.create({
-    userId,
+  const prediction = await safeCreate(YieldPrediction, userId, {
     cropType,
     predictedYieldToday,
     predictedYield3Days,
@@ -113,7 +117,7 @@ export async function predictYield(userId, input) {
     scenarios,
     provenance: {
       formula_terms: {
-        baseYield: "fruitsPerPlant * avgFruitWeightKg * totalPlants",
+        baseYield: "unitsPerPlant * avgUnitWeightKg * totalPlants",
         weatherAdjustment: "weatherScore * ((temperatureFactor + rainfallFactor) / 2)",
         correctedYield: "grossPotentialYieldKg * (1 - intelligenceYieldBias)",
         sellableYield: "correctedYieldKg * (1 - totalLossPct/100)"
@@ -125,6 +129,8 @@ export async function predictYield(userId, input) {
       ...input,
       computed: {
         totalPlants,
+        unitsPerPlant,
+        avgUnitWeightKg,
         baseYield,
         weatherAdjustment,
         grossPotentialYieldKg,
@@ -144,5 +150,5 @@ export async function predictYield(userId, input) {
     capturedAt: new Date().toISOString()
   }, { source: "yield" });
 
-  return prediction.toObject();
+  return prediction;
 }

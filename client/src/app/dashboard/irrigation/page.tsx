@@ -1,189 +1,213 @@
-﻿"use client";
+"use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CloudRain, Droplets, RefreshCw, Zap } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Droplets, CloudRain, RefreshCw, Zap } from "lucide-react";
 import { recommendIrrigation } from "@/lib/api";
-import { readMonitorSnapshot } from "@/lib/monitor-context";
+import { formatRelativeTime } from "@/lib/live-data";
 import { saveModuleSnapshot } from "@/lib/module-context";
+import { useConnectedFarmContext, type ConnectedFarmDefaults } from "@/hooks/useConnectedFarmContext";
+
+type IrrigationForm = {
+  cropType: string;
+  soilMoisture: number;
+  rainForecastMm: number;
+  rainProbability: number;
+  cropStage: string;
+};
+
+function buildIrrigationForm(defaults: ConnectedFarmDefaults): IrrigationForm {
+  return {
+    cropType: defaults.cropType || "Tomato",
+    soilMoisture: Number((defaults.soilMoisture || 58).toFixed(1)),
+    rainForecastMm: Number((defaults.rainForecastMm || 0).toFixed(1)),
+    rainProbability: Number((defaults.rainProbability || 0.2).toFixed(2)),
+    cropStage: defaults.growthStage || "flowering"
+  };
+}
 
 export default function IrrigationPage() {
+  const { liveDefaults, liveFieldContext, selectedField, selectedFieldId, isLoading } = useConnectedFarmContext();
+  const hydratedFieldKey = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState(() => {
-    const monitor = readMonitorSnapshot();
-    return {
-      soilMoisture: "",
-      rainForecastMm: 0,
-      cropStage: monitor?.growthStage || "flowering",
-    };
+  const [form, setForm] = useState<IrrigationForm>({
+    cropType: "Tomato",
+    soilMoisture: 58,
+    rainForecastMm: 0,
+    rainProbability: 0.2,
+    cropStage: "flowering"
   });
 
-  const soilMoistureValue = Number(form.soilMoisture);
-  const hasSoilMoisture = form.soilMoisture !== "" && Number.isFinite(soilMoistureValue);
-
-  const run = async () => {
-    if (!hasSoilMoisture) {
-      setError("Enter measured soil moisture to run irrigation planning.");
-      return;
-    }
-
+  const run = async (override?: IrrigationForm) => {
+    const activeForm = override ?? form;
     setLoading(true);
     setError(null);
-    const res = await recommendIrrigation({
-      soilMoisture: soilMoistureValue,
-      rainForecastMm: Number(form.rainForecastMm),
-      cropStage: form.cropStage,
-    });
-    if (res.success) {
+
+    const payload = {
+      ...activeForm,
+      fieldContext: liveFieldContext
+    };
+
+    const res = await recommendIrrigation(payload);
+    if (res.success && res.data) {
       setResult(res.data);
-      saveModuleSnapshot("irrigation", res.data, {
-        soilMoisture: soilMoistureValue,
-        rainForecastMm: Number(form.rainForecastMm),
-        cropStage: form.cropStage,
-      });
+      saveModuleSnapshot("irrigation", res.data, payload);
+    } else {
+      setError(res.error || "Failed to run irrigation planning.");
     }
-    else setError(res.error || "Failed.");
+
     setLoading(false);
   };
 
   useEffect(() => {
-    setResult(null);
-  }, [form.soilMoisture, form.rainForecastMm, form.cropStage]);
+    if (isLoading) {
+      return;
+    }
 
-  const recColors: Record<string, string> = {
+    const fieldKey = selectedFieldId || "__default__";
+    if (hydratedFieldKey.current === fieldKey) {
+      return;
+    }
+
+    const nextForm = buildIrrigationForm(liveDefaults);
+    hydratedFieldKey.current = fieldKey;
+    setForm(nextForm);
+    void run(nextForm);
+  }, [isLoading, liveDefaults, selectedFieldId, liveFieldContext]);
+
+  const moistureColor =
+    form.soilMoisture < 40 ? "bg-red-400" : form.soilMoisture < 60 ? "bg-primary" : "bg-blue-400";
+  const recommendationColor: Record<string, string> = {
     "Irrigate today": "text-red-400",
     "Light irrigation": "text-orange-400",
     "Delay irrigation": "text-blue-400",
-    "Skip irrigation": "text-primary",
+    "Skip irrigation": "text-primary"
   };
-  const recColor = result ? recColors[result.recommendation] || "text-primary" : "text-muted-foreground";
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl space-y-6 animate-in fade-in duration-500">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Irrigation Planner</h1>
-          <p className="text-muted-foreground mt-2">AI recommendation based on measured soil moisture and rain forecasts.</p>
+          <p className="mt-2 text-muted-foreground">The planner is now fed by live soil moisture, rain probability, and crop stage from the active field context.</p>
         </div>
-        <Button onClick={run} disabled={loading || !hasSoilMoisture} variant="outline" className="gap-2 border-white/10 bg-transparent hover:bg-white/5">
+        <Button onClick={() => void run()} disabled={loading} variant="outline" className="gap-2 border-white/10 bg-transparent hover:bg-white/5">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
-      <Card className="bg-[#1A1D1D] border-white/5">
-        <CardContent className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+          Field: {selectedField?.name || "Default field"}
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+          Live update: {liveDefaults.updatedAt ? formatRelativeTime(liveDefaults.updatedAt) : "waiting for stream"}
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+          Rain probability: {Math.round(form.rainProbability * 100)}%
+        </span>
+      </div>
+
+      <Card className="border-white/5 bg-[#1A1D1D]">
+        <CardContent className="grid grid-cols-1 gap-4 p-6 md:grid-cols-4">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Soil Moisture (%) - Manual Entry</label>
-            <Input
-              type="number"
-              value={form.soilMoisture}
-              onChange={(e) => setForm((f) => ({ ...f, soilMoisture: e.target.value }))}
-              placeholder="Enter sensor reading (e.g. 52)"
-              className="bg-[#0E1111] border-white/10 text-foreground h-9 text-sm"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">Use actual field sensor value; this is not auto-filled.</p>
+            <label className="mb-1 block text-xs text-muted-foreground">Crop Type</label>
+            <Input value={form.cropType} onChange={(event) => setForm((current) => ({ ...current, cropType: event.target.value }))} className="h-9 border-white/10 bg-[#0E1111] text-sm text-foreground" />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Rain Forecast (mm)</label>
-            <Input
-              type="number"
-              value={form.rainForecastMm}
-              onChange={(e) => setForm((f) => ({ ...f, rainForecastMm: Number(e.target.value) }))}
-              className="bg-[#0E1111] border-white/10 text-foreground h-9 text-sm"
-            />
+            <label className="mb-1 block text-xs text-muted-foreground">Soil Moisture (%)</label>
+            <Input type="number" value={form.soilMoisture} onChange={(event) => setForm((current) => ({ ...current, soilMoisture: Number(event.target.value) }))} className="h-9 border-white/10 bg-[#0E1111] text-sm text-foreground" />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Crop Stage</label>
-            <Input
-              value={form.cropStage}
-              onChange={(e) => setForm((f) => ({ ...f, cropStage: e.target.value }))}
-              className="bg-[#0E1111] border-white/10 text-foreground h-9 text-sm"
-            />
+            <label className="mb-1 block text-xs text-muted-foreground">Rain Forecast (mm)</label>
+            <Input type="number" value={form.rainForecastMm} onChange={(event) => setForm((current) => ({ ...current, rainForecastMm: Number(event.target.value) }))} className="h-9 border-white/10 bg-[#0E1111] text-sm text-foreground" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Crop Stage</label>
+            <Input value={form.cropStage} onChange={(event) => setForm((current) => ({ ...current, cropStage: event.target.value }))} className="h-9 border-white/10 bg-[#0E1111] text-sm text-foreground" />
           </div>
         </CardContent>
       </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="bg-[#0E1111] border-white/5">
+        <Card className="border-white/5 bg-[#0E1111]">
           <CardContent className="p-6">
-            <div className="flex items-center gap-2 mb-5">
+            <div className="mb-5 flex items-center gap-2">
               <Droplets className="h-5 w-5 text-primary" />
               <h3 className="font-semibold text-foreground">Soil Moisture</h3>
             </div>
-            <div className="relative h-4 bg-white/5 rounded-full overflow-hidden">
-              <div
-                className={`absolute left-0 top-0 h-full rounded-full transition-all duration-700 ${
-                  !hasSoilMoisture ? "bg-white/20" : soilMoistureValue < 40 ? "bg-red-400" : soilMoistureValue < 60 ? "bg-primary" : "bg-blue-400"
-                }`}
-                style={{ width: `${Math.min(100, hasSoilMoisture ? soilMoistureValue : 0)}%` }}
-              />
+            <div className="relative h-4 overflow-hidden rounded-full bg-white/5">
+              <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-700 ${moistureColor}`} style={{ width: `${Math.min(100, Math.max(0, form.soilMoisture))}%` }} />
             </div>
-            <div className="flex justify-between mt-2">
+            <div className="mt-2 flex justify-between">
               <span className="text-xs text-muted-foreground">Dry (0%)</span>
-              <span className={`text-sm font-bold ${!hasSoilMoisture ? "text-muted-foreground" : soilMoistureValue < 40 ? "text-red-400" : "text-primary"}`}>
-                {hasSoilMoisture ? `${soilMoistureValue}%` : "--"}
-              </span>
+              <span className={`text-sm font-bold ${form.soilMoisture < 40 ? "text-red-400" : "text-primary"}`}>{form.soilMoisture}%</span>
               <span className="text-xs text-muted-foreground">Saturated (100%)</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
-              {!hasSoilMoisture
-                ? "Enter soil moisture reading to evaluate irrigation."
-                : soilMoistureValue < 40
-                  ? "Below healthy range - crops are stressed"
-                  : soilMoistureValue > 70
-                    ? "Adequate - no irrigation needed"
-                    : "Good moisture level"}
+            <p className="mt-3 text-xs text-muted-foreground">
+              {form.soilMoisture < 40
+                ? "Below healthy range for the active crop stage."
+                : form.soilMoisture > 70
+                  ? "Adequate moisture level. Hold irrigation unless rainfall misses."
+                  : "Moisture is inside the working band for most field operations."}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0E1111] border-white/5">
+        <Card className="border-white/5 bg-[#0E1111]">
           <CardContent className="p-6">
-            <div className="flex items-center gap-2 mb-5">
+            <div className="mb-5 flex items-center gap-2">
               <CloudRain className="h-5 w-5 text-blue-400" />
-              <h3 className="font-semibold text-foreground">Rain Forecast</h3>
+              <h3 className="font-semibold text-foreground">Rain Feed</h3>
             </div>
-            <div className="text-center py-4">
-              <CloudRain className={`h-12 w-12 mx-auto mb-3 ${form.rainForecastMm > 5 ? "text-blue-400" : "text-muted-foreground"}`} />
+            <div className="py-4 text-center">
+              <CloudRain className={`mx-auto mb-3 h-12 w-12 ${form.rainForecastMm > 5 ? "text-blue-400" : "text-muted-foreground"}`} />
               <p className="text-4xl font-bold text-foreground">
                 {form.rainForecastMm}
-                <span className="text-lg text-muted-foreground ml-1">mm</span>
+                <span className="ml-1 text-lg text-muted-foreground">mm</span>
               </p>
-              <p className="text-sm text-muted-foreground mt-1">expected in next 24 hours</p>
+              <p className="mt-1 text-sm text-muted-foreground">{Math.round(form.rainProbability * 100)}% expected in the next cycle</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="bg-[#0E1111] border-white/5">
+      <Card className="border-white/5 bg-[#0E1111]">
         <CardContent className="p-8">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20">
               <Zap className="h-5 w-5 text-primary" />
             </div>
             <h2 className="text-xl font-semibold text-foreground">AI Recommendation</h2>
           </div>
           {loading ? (
             <div className="flex items-center gap-3 text-muted-foreground">
-              <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               Analyzing conditions...
             </div>
           ) : error ? (
             <p className="text-red-400">{error}</p>
           ) : result ? (
             <div className="space-y-3">
-              <h3 className={`text-2xl font-bold ${recColor}`}>{result.recommendation}</h3>
+              <h3 className={`text-2xl font-bold ${recommendationColor[result.recommendation] || "text-primary"}`}>{result.recommendation}</h3>
               <p className="text-muted-foreground">{result.reason}</p>
-              <p className="text-sm text-muted-foreground">
-                Next review recommended in: <span className="text-foreground font-medium">{result.nextReviewHours} hours</span>
-              </p>
+              <div className="grid gap-4 pt-2 md:grid-cols-2">
+                <div className="rounded-xl border border-white/5 bg-[#1A1D1D] p-4">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Next review</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{result.nextReviewHours} h</p>
+                </div>
+                <div className="rounded-xl border border-white/5 bg-[#1A1D1D] p-4">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Water plan</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{result.litersPerAcre || 0} L/acre</p>
+                </div>
+              </div>
             </div>
           ) : (
-            <p className="text-muted-foreground">Enter moisture value and click Refresh.</p>
+            <p className="text-muted-foreground">Waiting for connected field data.</p>
           )}
         </CardContent>
       </Card>

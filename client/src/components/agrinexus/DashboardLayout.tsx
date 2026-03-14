@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
     LayoutDashboard,
     Camera,
+    RadioTower,
     TrendingUp,
     Bug,
     Droplet,
@@ -19,7 +20,8 @@ import {
     Plus,
     Bell,
     HelpCircle,
-    CheckSquare
+    CheckSquare,
+    Waves
 } from "lucide-react";
 import { useAuth } from "@/auth/client";
 
@@ -45,6 +47,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             title: "INTELLIGENCE",
             items: [
                 { name: "Crop Monitor", href: "/dashboard/monitor", icon: Camera },
+                { name: "Spectral View", href: "/dashboard/spectral", icon: Waves },
+                { name: "Sensor Grid", href: "/dashboard/sensors", icon: RadioTower },
                 { name: "Yield Forecast", href: "/dashboard/yield", icon: TrendingUp },
                 { name: "Disease Risk", href: "/dashboard/disease", icon: Bug },
                 { name: "Irrigation", href: "/dashboard/irrigation", icon: Droplet },
@@ -68,7 +72,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {
             title: "ACCOUNT",
             items: [
-                { name: "Reports", href: "/dashboard/report", icon: FileText },
+                { name: "Reports", href: "/dashboard/reports", icon: FileText },
                 { name: "Farm Profile", href: "/dashboard/profile", icon: User },
             ]
         }

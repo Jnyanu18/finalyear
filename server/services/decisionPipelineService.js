@@ -8,6 +8,7 @@ import { bestMarketRoute } from "./marketService.js";
 import { simulateProfit } from "./profitService.js";
 import { getLatestFieldSnapshot, upsertFieldSnapshot } from "./fieldContextService.js";
 import { fetchMarketSnapshot, fetchWeatherSnapshot } from "../utils/externalData.js";
+import { getCropProfile } from "../config/cropProfiles.js";
 
 export async function runDecisionPipeline(userId, input = {}) {
   const latestAnalysis = await getLatestCropAnalysis(userId);
@@ -38,8 +39,15 @@ export async function runDecisionPipeline(userId, input = {}) {
   const market = await fetchMarketSnapshot(baseContext.crop, baseContext.market.location);
   baseContext.weather = weather;
   baseContext.market = { ...baseContext.market, ...market };
+  const cropProfile = getCropProfile(baseContext.crop);
 
-  const fruitsPerPlant = Number(input.fruitsPerPlant ?? (latestAnalysis?.fruitCount || 20));
+  const fruitsPerPlant = Number(
+    input.fruitsPerPlant ??
+      input.produceUnitsPerPlant ??
+      latestAnalysis?.fruitCount ??
+      cropProfile.typicalUnitsPerPlant ??
+      20
+  );
 
   const yieldPrediction = await predictYield(userId, {
     cropType: baseContext.crop,
@@ -47,7 +55,7 @@ export async function runDecisionPipeline(userId, input = {}) {
     fruitsPerPlant,
     acres: baseContext.acres,
     plantsPerAcre: baseContext.plantsPerAcre,
-    avgFruitWeightKg: Number(input.avgFruitWeightKg || 0.09),
+    avgFruitWeightKg: Number(input.avgFruitWeightKg || cropProfile.avgUnitWeightKg || 0.09),
     weatherScore: Number(input.weatherScore || 0.82),
     historicalYieldFactor: Number(input.historicalYieldFactor || 1),
     fieldContext: baseContext
@@ -75,9 +83,10 @@ export async function runDecisionPipeline(userId, input = {}) {
   const ripeRatio = latestAnalysis?.fruitCount ? ripeCount / latestAnalysis.fruitCount : 0.4;
 
   const harvest = await planHarvest(userId, {
+    cropType: baseContext.crop,
     fruitCount: latestAnalysis?.fruitCount || fruitsPerPlant,
     ripeRatio,
-    avgFruitWeightKg: Number(input.avgFruitWeightKg || 0.09),
+    avgFruitWeightKg: Number(input.avgFruitWeightKg || cropProfile.avgUnitWeightKg || 0.09),
     capturedAt: new Date().toISOString(),
     fieldContext: baseContext
   });

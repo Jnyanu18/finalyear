@@ -1,73 +1,134 @@
-# Agri Pro Monorepo
+﻿# AgriNexus + AgroSense AI
 
-This repository runs as two active apps:
+This repository now runs the original AgriNexus farm workflow and an integrated AgroSense AI precision agriculture layer.
 
-- `client/`: React + Vite frontend (`http://localhost:5173`)
-- `server/`: Express API (`http://localhost:5000`)
+Architecture reference:
+- `docs/system-architecture.md`
 
-The top-level package scripts now proxy to these apps.
+## What was added
+
+- AgroSense field intelligence APIs under `server/routes/agrosense*.js`
+- Real-time sensor websocket at `ws://localhost:5000/ws/sensors/:fieldId`
+- React dashboard pages for:
+  - ` /dashboard ` main AgroSense operations dashboard
+  - ` /dashboard/spectral ` spectral view
+  - ` /dashboard/sensors ` sensor network view
+  - ` /dashboard/reports ` report generation
+- PostgreSQL schema in `server/prisma/schema.prisma`
+- Python inference service in `python-services/inference-service/`
+- MATLAB processing and training scripts in `matlab/`
+- Docker compose files for local and production-style stack boot
+
+## Active applications
+
+- `client/`: React 18 + Vite frontend
+- `server/`: Express API with JWT auth, seeded AgroSense runtime data, queue hooks, notifications, and websocket streaming
+- `python-services/inference-service/`: FastAPI inference microservice
+- `matlab/`: hyperspectral ingestion, index extraction, segmentation, forecasting, fusion, and alert scripts
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - npm
-- MongoDB instance (local or hosted)
+- MongoDB for legacy AgriNexus auth/profile modules
+- Optional: Docker Desktop, MATLAB, PostgreSQL, Redis, InfluxDB
 
-## Setup
+## Environment
 
-1. Install root dependencies:
+Copy `.env.example` and set values as needed.
+
+Key variables:
+
+- `MONGODB_URI`
+- `AUTH_JWT_SECRET`
+- `POSTGRES_URL`
+- `REDIS_URL`
+- `INFLUX_URL`
+- `INFLUX_TOKEN`
+- `PYTHON_INFERENCE_URL`
+- `MATLAB_BRIDGE_MODE`
+- `MATLAB_EXECUTABLE`
+
+## Install
 
 ```bash
 npm install
-```
-
-2. Install app dependencies:
-
-```bash
-npm --prefix client install
 npm --prefix server install
+npm --prefix client install
 ```
 
-3. Configure backend env:
-
-`server/.env`
+Optional Python service:
 
 ```bash
-PORT=5000
-CLIENT_URL=http://localhost:5173
-MONGODB_URI=mongodb://127.0.0.1:27017
-MONGODB_DB=agrivision
-AUTH_JWT_SECRET=replace_with_a_long_random_secret
-GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+cd python-services/inference-service
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-4. Optional frontend env for non-proxied deployments:
+## Run locally
 
-`client/.env`
-
-```bash
-VITE_API_ORIGIN=http://localhost:5000
-# or:
-# VITE_API_V1_BASE=http://localhost:5000/api/v1
-```
-
-## Run (Development)
-
-Start backend:
+Backend:
 
 ```bash
 npm run dev:server
 ```
 
-Start frontend in a second terminal:
+Frontend:
 
 ```bash
 npm run dev:client
 ```
 
-## Validation
+Optional Python inference:
 
 ```bash
-npm run build
-curl http://localhost:5000/api/v1/health
+cd python-services/inference-service
+uvicorn app:app --host 0.0.0.0 --port 8001
 ```
+
+## Docker
+
+Local stack:
+
+```bash
+docker compose up --build
+```
+
+Production-style stack:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+## AgroSense API surface
+
+Authenticated with JWT bearer tokens:
+
+- `GET /api/v1/fields`
+- `GET /api/v1/fields/:id/map`
+- `GET /api/v1/fields/:id/indices`
+- `GET /api/v1/fields/:id/sensors`
+- `GET /api/v1/fields/:id/sensors/history?range=24h|7d|30d`
+- `GET /api/v1/fields/:id/risk`
+- `GET /api/v1/fields/:id/forecast`
+- `GET /api/v1/fields/:id/insights`
+- `POST /api/v1/fields/:id/analyze`
+- `GET /api/v1/alerts`
+- `POST /api/v1/alerts/:id/acknowledge`
+- `GET /api/v1/models/status`
+- `GET /api/v1/reports/:fieldId`
+- `WS /ws/sensors/:fieldId`
+
+## Validation completed in this workspace
+
+- Backend AgroSense endpoints verified with a real JWT session
+- Websocket sensor snapshot verified
+- `client/` targeted ESLint passes for the new AgroSense files
+- `client/` production build passes
+
+## Notes
+
+- AgroSense backend endpoints currently run from seeded in-memory field data unless PostgreSQL, InfluxDB, Redis, and the optional Python/MATLAB services are configured.
+- PDF report generation falls back to HTML if Puppeteer cannot render a PDF in the current environment.
+- The existing AgriNexus Mongo-backed modules remain intact.

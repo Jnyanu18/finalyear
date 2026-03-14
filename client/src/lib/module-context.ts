@@ -1,4 +1,4 @@
-type ModuleKey = "yield" | "disease" | "market" | "irrigation";
+type ModuleKey = "yield" | "disease" | "market" | "irrigation" | "storage" | "profit";
 
 type ModuleSnapshot<TData = any, TInput = any> = {
   data: TData;

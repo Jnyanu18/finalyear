@@ -2,6 +2,8 @@ import { DiseasePrediction } from "../models/DiseasePrediction.js";
 import { FarmIntelligence } from "../models/FarmIntelligence.js";
 import { freshnessConfidence, buildInsufficientDataResponse, toNumber } from "../utils/modelGovernance.js";
 import { upsertFieldSnapshot } from "./fieldContextService.js";
+import { safeCreate, safeFindOneLean } from "../utils/persistence.js";
+import { getDiseaseLabel } from "../config/cropProfiles.js";
 
 function clamp(v, min = 0, max = 1) {
   return Math.min(max, Math.max(min, v));
@@ -11,16 +13,6 @@ function level(prob) {
   if (prob >= 0.7) return "High";
   if (prob >= 0.4) return "Medium";
   return "Low";
-}
-
-function likelyDisease(cropType, humidityFactor, tempFactor) {
-  const c = String(cropType || "").toLowerCase();
-  if (c.includes("tomato")) {
-    return humidityFactor > 0.65 && tempFactor > 0.55 ? "Tomato Blight" : "Early Blight Risk";
-  }
-  if (c.includes("rice")) return "Rice Blast";
-  if (c.includes("chilli")) return "Anthracnose";
-  return "General Fungal Disease";
 }
 
 function stageFactor(stage) {
@@ -54,8 +46,7 @@ export async function predictDiseaseRisk(userId, input) {
       assumptions: { formula: "0.4*humidityFactor + 0.3*temperatureFactor + 0.3*cropStageFactor" }
     });
 
-    const doc = await DiseasePrediction.create({
-      userId,
+    const doc = await safeCreate(DiseasePrediction, userId, {
       cropType,
       disease: "Unknown",
       riskProbability: 0,
@@ -66,7 +57,7 @@ export async function predictDiseaseRisk(userId, input) {
       explanation: "Insufficient data for disease risk computation.",
       inputContext: input
     });
-    return doc.toObject();
+    return doc;
   }
 
   const humidityFactor = clamp((humidity - 50) / 40, 0, 1);
@@ -75,17 +66,16 @@ export async function predictDiseaseRisk(userId, input) {
 
   const riskScore = 0.4 * humidityFactor + 0.3 * temperatureFactor + 0.3 * cropStageFactor;
 
-  const intelligence = await FarmIntelligence.findOne({ userId }).lean();
+  const intelligence = await safeFindOneLean(FarmIntelligence, { userId });
   const confidenceBias = clamp(toNumber(intelligence?.predictionConfidence, 0.7), 0.45, 0.95);
   const probability = Number(clamp(riskScore * (0.9 + confidenceBias * 0.15), 0.02, 0.98).toFixed(2));
 
   const freshness = freshnessConfidence(input.fieldContext?.sensorReadings?.capturedAt || input.fieldContext?.capturedAt, 24);
   const confidence = Number(clamp(0.54 + freshness * 0.16 + confidenceBias * 0.24, 0.45, 0.95).toFixed(2));
 
-  const prediction = await DiseasePrediction.create({
-    userId,
+  const prediction = await safeCreate(DiseasePrediction, userId, {
     cropType,
-    disease: likelyDisease(cropType, humidityFactor, temperatureFactor),
+    disease: getDiseaseLabel(cropType, humidityFactor, temperatureFactor),
     riskProbability: probability,
     riskLevel: level(probability),
     status: "ok",
@@ -117,5 +107,5 @@ export async function predictDiseaseRisk(userId, input) {
     capturedAt: new Date().toISOString()
   }, { source: "disease" });
 
-  return prediction.toObject();
+  return prediction;
 }

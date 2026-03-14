@@ -1,24 +1,16 @@
 import { IrrigationRecommendation } from "../models/IrrigationRecommendation.js";
 import { buildInsufficientDataResponse, freshnessConfidence, toNumber } from "../utils/modelGovernance.js";
 import { upsertFieldSnapshot } from "./fieldContextService.js";
+import { safeCreate } from "../utils/persistence.js";
+import { getIrrigationTargetForStage } from "../config/cropProfiles.js";
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
 
-function stageTarget(stageRaw) {
-  const stage = String(stageRaw || "").toLowerCase();
-  if (stage.includes("seed")) return 70;
-  if (stage.includes("veget")) return 64;
-  if (stage.includes("flower")) return 67;
-  if (stage.includes("fruit")) return 66;
-  if (stage.includes("ripen")) return 58;
-  if (stage.includes("harvest")) return 54;
-  return 62;
-}
-
 export async function recommendIrrigation(userId, input) {
   const modelVersion = "irrigation_model_v2";
+  const cropType = input.cropType || "Tomato";
   const cropStage = input.cropStage || "vegetative";
   const soilMoisture = toNumber(input.soilMoisture, NaN);
 
@@ -34,8 +26,7 @@ export async function recommendIrrigation(userId, input) {
       assumptions: { formula: "irrigationNeed = optimalMoisture - soilMoistureIndex - rainAdjustment" }
     });
 
-    const doc = await IrrigationRecommendation.create({
-      userId,
+    const doc = await safeCreate(IrrigationRecommendation, userId, {
       recommendation: "Insufficient data",
       reason: "Soil moisture is required for irrigation advice.",
       nextReviewHours: 6,
@@ -44,10 +35,10 @@ export async function recommendIrrigation(userId, input) {
       missingInputs,
       inputContext: input
     });
-    return doc.toObject();
+    return doc;
   }
 
-  const target = stageTarget(cropStage);
+  const target = getIrrigationTargetForStage(cropType, cropStage);
   const optimalSoilMoisture = target;
   const soilMoistureIndex = soilMoisture / optimalSoilMoisture;
 
@@ -79,8 +70,7 @@ export async function recommendIrrigation(userId, input) {
   const freshness = freshnessConfidence(input.fieldContext?.sensorReadings?.capturedAt || input.fieldContext?.capturedAt, 24);
   const confidence = Number(clamp(0.56 + freshness * 0.32, 0.45, 0.94).toFixed(2));
 
-  const doc = await IrrigationRecommendation.create({
-    userId,
+  const doc = await safeCreate(IrrigationRecommendation, userId, {
     recommendation,
     reason,
     nextReviewHours,
@@ -113,5 +103,5 @@ export async function recommendIrrigation(userId, input) {
     capturedAt: new Date().toISOString()
   }, { source: "irrigation" });
 
-  return doc.toObject();
+  return doc;
 }

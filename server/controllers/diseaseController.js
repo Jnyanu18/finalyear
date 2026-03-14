@@ -7,7 +7,8 @@ const schema = z.object({
   cropStage: z.string().default("fruiting"),
   temperature: z.number(),
   humidity: z.number().min(0).max(100),
-  regionalDiseaseDataset: z.string().optional()
+  regionalDiseaseDataset: z.string().optional(),
+  fieldContext: z.any().optional()
 });
 
 export async function diseasePrediction(req, res) {

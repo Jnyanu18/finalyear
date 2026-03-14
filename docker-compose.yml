@@ -1,0 +1,84 @@
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agrosense}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrosense}
+      POSTGRES_DB: ${POSTGRES_DB:-agrosense}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USERNAME:-agrosense}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-agrosense123}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-agrosense}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-agrosense}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-agrosense-token}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  python-inference:
+    build:
+      context: ./python-services/inference-service
+    ports:
+      - "8001:8001"
+
+  backend:
+    build:
+      context: ./server
+    depends_on:
+      - postgres
+      - influxdb
+      - redis
+      - mongodb
+      - python-inference
+    environment:
+      PORT: 5000
+      CLIENT_URL: http://localhost:5173
+      MONGODB_URI: mongodb://mongodb:27017/agrinexus
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-agrosense}:${POSTGRES_PASSWORD:-agrosense}@postgres:5432/${POSTGRES_DB:-agrosense}?schema=public
+      REDIS_URL: redis://redis:6379
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-agrosense-token}
+      INFLUX_ORG: ${INFLUX_ORG:-agrosense}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-agrosense}
+      PYTHON_INFERENCE_URL: http://python-inference:8001
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me}
+      MATLAB_BRIDGE_MODE: hybrid
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build:
+      context: ./client
+    depends_on:
+      - backend
+    ports:
+      - "4173:80"
+
+volumes:
+  postgres_data:
+  influxdb_data:
+  redis_data:
+  mongodb_data:

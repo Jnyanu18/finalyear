@@ -7,7 +7,8 @@ const schema = z.object({
   storageConditions: z.string().optional(),
   temperature: z.number(),
   humidity: z.number().min(0).max(100),
-  ventilationScore: z.number().min(0).max(1).default(0.7)
+  ventilationScore: z.number().min(0).max(1).default(0.7),
+  fieldContext: z.any().optional()
 });
 
 export async function storageRecommendation(req, res) {

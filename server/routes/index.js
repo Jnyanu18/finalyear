@@ -10,6 +10,10 @@ import marketRoutes from "./marketRoutes.js";
 import profitRoutes from "./profitRoutes.js";
 import outcomeRoutes from "./outcomeRoutes.js";
 import advisorRoutes from "./advisorRoutes.js";
+import agrosenseFieldRoutes from "./agrosenseFieldRoutes.js";
+import agrosenseAlertRoutes from "./agrosenseAlertRoutes.js";
+import agrosenseModelRoutes from "./agrosenseModelRoutes.js";
+import agrosenseReportRoutes from "./agrosenseReportRoutes.js";
 
 const router = Router();
 
@@ -44,7 +48,20 @@ router.get("/docs", (_req, res) => {
       "POST /api/v1/profit/simulate",
       "POST /api/v1/outcome/submit",
       "POST /api/v1/advisor/chat",
-      "GET /api/v1/advisor/report"
+      "GET /api/v1/advisor/report",
+      "GET /api/v1/fields",
+      "GET /api/v1/fields/:id/map",
+      "GET /api/v1/fields/:id/indices",
+      "GET /api/v1/fields/:id/sensors",
+      "GET /api/v1/fields/:id/sensors/history?range=24h|7d|30d",
+      "GET /api/v1/fields/:id/risk",
+      "GET /api/v1/fields/:id/forecast",
+      "GET /api/v1/fields/:id/insights",
+      "POST /api/v1/fields/:id/analyze",
+      "GET /api/v1/alerts",
+      "POST /api/v1/alerts/:id/acknowledge",
+      "GET /api/v1/models/status",
+      "GET /api/v1/reports/:fieldId"
     ]
   });
 });
@@ -60,5 +77,9 @@ router.use("/market", marketRoutes);
 router.use("/profit", profitRoutes);
 router.use("/outcome", outcomeRoutes);
 router.use("/advisor", advisorRoutes);
+router.use("/", agrosenseFieldRoutes);
+router.use("/", agrosenseAlertRoutes);
+router.use("/", agrosenseModelRoutes);
+router.use("/", agrosenseReportRoutes);
 
 export default router;

@@ -1,3 +1,5 @@
+import { getCropProfile } from "../config/cropProfiles.js";
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -65,22 +67,41 @@ export async function fetchWeatherSnapshot(location = "Bengaluru") {
 }
 
 export async function fetchMarketSnapshot(cropType = "Tomato", location = "Bengaluru") {
-  const base = {
-    tomato: 24,
-    chilli: 42,
-    rice: 31,
-    wheat: 28,
-    potato: 18,
-    onion: 22
+  const profile = getCropProfile(cropType);
+  const baseReferencePrice = 25;
+  const locationPremiumMap = {
+    bengaluru: 1.05,
+    mysuru: 0.98,
+    mandya: 0.95,
+    coimbatore: 1.02,
+    salem: 1.01,
   };
-  const key = String(cropType || "tomato").toLowerCase();
-  const price = base[key] || 25;
+  const locationKey = String(location || "").trim().toLowerCase();
+  const locationPremium = locationPremiumMap[locationKey] || 1;
+  const price = Number((baseReferencePrice * (profile.marketPriceFactor || 1) * locationPremium).toFixed(2));
+  const shelfLifeBias = profile.shelfLifeDays >= 10 ? 0.012 : -0.004;
+  const cropMomentum = clamp((profile.marketPriceFactor || 1) - 1, -0.08, 0.12);
+  const trendFactor3Days = 1 + shelfLifeBias + cropMomentum * 0.4;
+  const trendFactor5Days = 1 + shelfLifeBias * 1.4 + cropMomentum * 0.25 - 0.01;
+  const projectedPrice3Days = Number((price * trendFactor3Days).toFixed(2));
+  const projectedPrice5Days = Number((price * trendFactor5Days).toFixed(2));
+  const volatility = Number(clamp(0.05 + Math.abs(cropMomentum) * 0.45 + (profile.shelfLifeDays <= 5 ? 0.03 : 0), 0.05, 0.18).toFixed(2));
+  const trend =
+    projectedPrice3Days > price * 1.015
+      ? "rising"
+      : projectedPrice3Days < price * 0.985
+        ? "softening"
+        : "stable";
 
   return {
     source: process.env.MARKET_API_KEY ? "market_api_stub" : "fallback",
     capturedAt: new Date().toISOString(),
     location,
     pricePerKg: price,
+    projectedPrice3Days,
+    projectedPrice5Days,
+    trend,
+    volatility,
     currency: "INR"
   };
 }

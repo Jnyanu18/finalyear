@@ -5,6 +5,7 @@ export type MonitorSnapshot = {
   growthStage: string;
   fruitCount: number;
   healthStatus: string;
+  healthScore?: number;
   stages: Array<{ stage: string; count: number }>;
   summary?: string;
   updatedAt: string;
@@ -12,9 +13,12 @@ export type MonitorSnapshot = {
 
 type MaybeSnapshot = MonitorSnapshot | null;
 
-export function saveMonitorSnapshot(snapshot: Omit<MonitorSnapshot, "updatedAt">) {
+export function saveMonitorSnapshot(snapshot: Omit<MonitorSnapshot, "updatedAt"> & { updatedAt?: string | null }) {
   if (typeof window === "undefined") return;
-  const payload: MonitorSnapshot = { ...snapshot, updatedAt: new Date().toISOString() };
+  const payload: MonitorSnapshot = {
+    ...snapshot,
+    updatedAt: snapshot.updatedAt || new Date().toISOString()
+  };
   window.localStorage.setItem(MONITOR_CONTEXT_KEY, JSON.stringify(payload));
 }
 

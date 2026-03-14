@@ -7,24 +7,41 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon --watch .env --watch . server.js"
+    "dev": "nodemon --watch .env --watch . server.js",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@influxdata/influxdb-client": "^1.35.0",
+    "@prisma/client": "^6.7.0",
     "@genkit-ai/google-genai": "^1.29.0",
     "bcryptjs": "^3.0.3",
+    "bull": "^4.16.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "firebase-admin": "^13.6.0",
     "genkit": "^1.29.0",
+    "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.1.0",
     "mongoose": "^9.2.4",
     "multer": "^2.1.1",
+    "nodemailer": "^7.0.9",
+    "puppeteer": "^24.38.0",
+    "twilio": "^5.10.3",
+    "winston": "^3.18.3",
+    "ws": "^8.18.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^6.7.0",
+    "supertest": "^7.1.4"
   },
   "keywords": [],
   "author": "",

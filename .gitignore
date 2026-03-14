@@ -21,16 +21,19 @@
 
 # Genkit (local traces/runtimes)
 .genkit/
+.idx/
 
 # Misc
 .DS_Store
 *.pem
+.modified
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 *.tsbuildinfo
 
 # Local .env files
@@ -42,6 +45,14 @@ pnpm-debug.log*
 
 # Vercel
 .vercel
+
+# Local offline fallback stores
+server/.local-*.json
+server/generated-reports/
+server/agrosense-runtime*.log
+client/agrosense-vite*.log
+matlab/runtime/
+python-services/inference-service/__pycache__/
 
 # IDEs
 .idea

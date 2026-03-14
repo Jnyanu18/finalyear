@@ -9,6 +9,10 @@ const cropAnalysisSchema = new mongoose.Schema(
     fruitCount: { type: Number, default: 0 },
     healthStatus: { type: String, default: "unknown" },
     healthScore: { type: Number, default: 0 },
+    analysisDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
     stages: [
       {
         stage: { type: String, required: true },

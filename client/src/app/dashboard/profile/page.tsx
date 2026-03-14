@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { withApiOrigin } from '@/lib/api-base';
 
 function profilePayload(profile: FarmerProfileResponse) {
   return {
@@ -23,6 +24,10 @@ function profilePayload(profile: FarmerProfileResponse) {
       allowAdvisorAccess: profile.consent.allowAdvisorAccess,
     },
   };
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unknown error';
 }
 
 export default function FarmerProfilePage() {
@@ -45,7 +50,7 @@ export default function FarmerProfilePage() {
     const loadProfile = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('/api/profile', { method: 'GET', credentials: 'include', cache: 'no-store' });
+        const response = await fetch(withApiOrigin('/api/profile'), { method: 'GET', credentials: 'include', cache: 'no-store' });
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok || !body?.profile) {
@@ -53,11 +58,11 @@ export default function FarmerProfilePage() {
         }
 
         setProfile(body.profile as FarmerProfileResponse);
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast({
           variant: 'destructive',
           title: 'Profile load failed',
-          description: error?.message || 'Please refresh and try again.',
+          description: getErrorMessage(error) || 'Please refresh and try again.',
         });
       } finally {
         setIsLoading(false);
@@ -71,7 +76,7 @@ export default function FarmerProfilePage() {
     if (!profile) return;
     try {
       setIsSaving(true);
-      const response = await fetch('/api/profile', {
+      const response = await fetch(withApiOrigin('/api/profile'), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -85,11 +90,11 @@ export default function FarmerProfilePage() {
 
       setProfile(body.profile as FarmerProfileResponse);
       toast({ title: 'Profile saved', description: 'Your farmer profile is updated.' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: 'destructive',
         title: 'Save failed',
-        description: error?.message || 'Could not save profile.',
+        description: getErrorMessage(error) || 'Could not save profile.',
       });
     } finally {
       setIsSaving(false);

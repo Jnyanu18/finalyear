@@ -3,10 +3,15 @@ import { planHarvest } from "../services/harvestService.js";
 import { sendSuccess } from "../utils/ApiResponse.js";
 
 const schema = z.object({
+  cropType: z.string().default("Tomato"),
   fruitCount: z.number().nonnegative(),
   ripeRatio: z.number().min(0).max(1),
-  avgFruitWeightKg: z.number().positive().default(0.09),
-  capturedAt: z.string().datetime().optional()
+  avgFruitWeightKg: z.number().positive().optional(),
+  avgUnitWeightKg: z.number().positive().optional(),
+  capturedAt: z.string().datetime().optional(),
+  farmerLocation: z.string().optional(),
+  localDistanceAdjust: z.number().optional(),
+  holdingCostPerDay: z.number().nonnegative().optional()
 });
 
 export async function harvestPlan(req, res) {

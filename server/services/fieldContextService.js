@@ -1,4 +1,5 @@
 import { FieldSnapshot } from "../models/FieldSnapshot.js";
+import mongoose from "mongoose";
 
 function toNum(v) {
   const n = Number(v);
@@ -48,10 +49,35 @@ export function normalizeFieldContext(input = {}) {
 }
 
 export async function getLatestFieldSnapshot(userId) {
-  return FieldSnapshot.findOne({ userId }).sort({ updatedAt: -1 }).lean();
+  if (mongoose.connection.readyState !== 1) return null;
+  if (!mongoose.Types.ObjectId.isValid(String(userId))) return null;
+  try {
+    return await FieldSnapshot.findOne({ userId }).sort({ updatedAt: -1 }).lean();
+  } catch (_error) {
+    return null;
+  }
 }
 
 export async function upsertFieldSnapshot(userId, contextPatch = {}, meta = {}) {
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      userId: String(userId),
+      cropAnalysisId: meta.cropAnalysisId || null,
+      source: meta.source || "module",
+      fieldContext: normalizeFieldContext(contextPatch),
+      capturedAt: meta.capturedAt || new Date().toISOString()
+    };
+  }
+  if (!mongoose.Types.ObjectId.isValid(String(userId))) {
+    return {
+      userId: String(userId),
+      cropAnalysisId: meta.cropAnalysisId || null,
+      source: meta.source || "module",
+      fieldContext: normalizeFieldContext(contextPatch),
+      capturedAt: meta.capturedAt || new Date().toISOString()
+    };
+  }
+
   const current = await FieldSnapshot.findOne({ userId }).lean();
   const merged = mergeDeep(current?.fieldContext || {}, normalizeFieldContext(contextPatch));
 

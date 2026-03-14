@@ -1,5 +1,6 @@
 import { FarmOutcome } from "../models/FarmOutcome.js";
 import { FarmIntelligence } from "../models/FarmIntelligence.js";
+import { canUseMongoForUser, safeCreate, safeFindOneLean } from "../utils/persistence.js";
 
 function safePercentAccuracy(predicted, actual) {
   if (predicted <= 0 && actual <= 0) return 1;
@@ -22,8 +23,7 @@ export async function submitOutcome(userId, input) {
     ((safePercentAccuracy(predictedYield, actualYield) + safePercentAccuracy(predictedPrice, actualPrice)) / 2).toFixed(2)
   );
 
-  const outcome = await FarmOutcome.create({
-    userId,
+  const outcome = await safeCreate(FarmOutcome, userId, {
     crop: input.crop,
     predictedYield,
     actualYield,
@@ -37,34 +37,36 @@ export async function submitOutcome(userId, input) {
     predictionAccuracy
   });
 
-  const current = await FarmIntelligence.findOne({ userId });
-  if (!current) {
-    await FarmIntelligence.create({
-      userId,
-      averageYieldError: yieldDifference,
-      averagePriceError: priceDifference,
-      predictionConfidence: predictionAccuracy,
-      sampleCount: 1
-    });
-  } else {
-    const nextSampleCount = current.sampleCount + 1;
-    const averageYieldError =
-      (current.averageYieldError * current.sampleCount + yieldDifference) / nextSampleCount;
-    const averagePriceError =
-      (current.averagePriceError * current.sampleCount + priceDifference) / nextSampleCount;
-    const predictionConfidence =
-      (current.predictionConfidence * current.sampleCount + predictionAccuracy) / nextSampleCount;
+  if (canUseMongoForUser(userId)) {
+    const current = await FarmIntelligence.findOne({ userId });
+    if (!current) {
+      await FarmIntelligence.create({
+        userId,
+        averageYieldError: yieldDifference,
+        averagePriceError: priceDifference,
+        predictionConfidence: predictionAccuracy,
+        sampleCount: 1
+      });
+    } else {
+      const nextSampleCount = current.sampleCount + 1;
+      const averageYieldError =
+        (current.averageYieldError * current.sampleCount + yieldDifference) / nextSampleCount;
+      const averagePriceError =
+        (current.averagePriceError * current.sampleCount + priceDifference) / nextSampleCount;
+      const predictionConfidence =
+        (current.predictionConfidence * current.sampleCount + predictionAccuracy) / nextSampleCount;
 
-    current.averageYieldError = Number(averageYieldError.toFixed(2));
-    current.averagePriceError = Number(averagePriceError.toFixed(2));
-    current.predictionConfidence = Number(predictionConfidence.toFixed(2));
-    current.sampleCount = nextSampleCount;
-    await current.save();
+      current.averageYieldError = Number(averageYieldError.toFixed(2));
+      current.averagePriceError = Number(averagePriceError.toFixed(2));
+      current.predictionConfidence = Number(predictionConfidence.toFixed(2));
+      current.sampleCount = nextSampleCount;
+      await current.save();
+    }
   }
 
-  return outcome.toObject();
+  return outcome;
 }
 
 export async function getFarmIntelligence(userId) {
-  return FarmIntelligence.findOne({ userId }).lean();
+  return safeFindOneLean(FarmIntelligence, { userId });
 }
