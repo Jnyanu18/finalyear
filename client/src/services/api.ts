@@ -1,10 +1,11 @@
 import axios from "axios";
 import { useAuthStore } from "../store/authStore";
 import { API_ORIGIN } from "../lib/api-base";
+import { env } from "../env";
 
 // The baseURL in Next.js when hitting its own routes usually doesn't need the host in the browser
 // but for absolute requests or SSR, we fallback to our known hostname or just `/api/v1` equivalent
-const baseURL = import.meta.env.VITE_API_URL || API_ORIGIN || "";
+const baseURL = env.API_URL || API_ORIGIN || "";
 
 export const api = axios.create({
   baseURL,
